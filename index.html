@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Background Remover</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            line-height: 1.6;
+            margin: 0;
+            padding: 20px;
+            background-color: #f4f4f4;
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background-color: #fff;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 0 10px rgba(0,0,0,0.1);
+        }
+        h1 {
+            text-align: center;
+            color: #333;
+        }
+        #drop-area {
+            border: 2px dashed #ccc;
+            border-radius: 20px;
+            width: 480px;
+            margin: 20px auto;
+            padding: 20px;
+            text-align: center;
+        }
+        #drop-area.highlight {
+            border-color: purple;
+        }
+        #file-input {
+            display: none;
+        }
+        .button {
+            display: inline-block;
+            padding: 10px 20px;
+            background-color: #007bff;
+            color: #fff;
+            cursor: pointer;
+            border-radius: 5px;
+            transition: background-color 0.3s;
+            margin: 10px;
+        }
+        .button:hover {
+            background-color: #0056b3;
+        }
+        #gallery {
+            margin-top: 20px;
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+        }
+        .image-container {
+            margin: 10px;
+            text-align: center;
+        }
+        .image-container img {
+            max-width: 300px;
+            max-height: 300px;
+            border-radius: 5px;
+            box-shadow: 0 0 5px rgba(0,0,0,0.2);
+        }
+        #loading {
+            display: none;
+            text-align: center;
+            margin-top: 20px;
+        }
+        #color-picker {
+            margin: 20px 0;
+            text-align: center;
+        }
+        #color-picker input {
+            margin: 0 10px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>AI Background Remover</h1>
+        <div id="drop-area">
+            <form class="my-form">
+                <p>Upload an image file with the file dialog or by dragging and dropping onto the dashed region</p>
+                <input type="file" id="file-input" accept="image/*" onchange="handleFiles(this.files)">
+                <label class="button" for="file-input">Select an image file</label>
+            </form>
+        </div>
+        <div id="color-picker">
+            <label for="bg-color">Select background color to remove:</label>
+            <input type="color" id="bg-color" value="#00ff00">
+            <label for="tolerance">Color tolerance:</label>
+            <input type="range" id="tolerance" min="0" max="255" value="50">
+        </div>
+        <div id="gallery"></div>
+        <div id="loading">Processing image... Please wait.</div>
+    </div>
+
+    <script>
+        let dropArea = document.getElementById('drop-area');
+        let bgColor = document.getElementById('bg-color');
+        let tolerance = document.getElementById('tolerance');
+
+        ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+            dropArea.addEventListener(eventName, preventDefaults, false);
+        });
+
+        function preventDefaults(e) {
+            e.preventDefault();
+            e.stopPropagation();
+        }
+
+        ['dragenter', 'dragover'].forEach(eventName => {
+            dropArea.addEventListener(eventName, highlight, false);
+        });
+
+        ['dragleave', 'drop'].forEach(eventName => {
+            dropArea.addEventListener(eventName, unhighlight, false);
+        });
+
+        function highlight(e) {
+            dropArea.classList.add('highlight');
+        }
+
+        function unhighlight(e) {
+            dropArea.classList.remove('highlight');
+        }
+
+        dropArea.addEventListener('drop', handleDrop, false);
+
+        function handleDrop(e) {
+            let dt = e.dataTransfer;
+            let files = dt.files;
+            handleFiles(files);
+        }
+
+        function handleFiles(files) {
+            ([...files]).forEach(uploadFile);
+        }
+
+        function uploadFile(file) {
+            let reader = new FileReader();
+            reader.readAsDataURL(file);
+            reader.onloadend = function() {
+                let img = document.createElement('img');
+                img.src = reader.result;
+                img.onload = function() {
+                    document.getElementById('gallery').innerHTML = '';
+                    document.getElementById('gallery').appendChild(createImageContainer(img, 'Original'));
+                    processImage(img);
+                }
+            }
+        }
+
+        function processImage(img) {
+            document.getElementById('loading').style.display = 'block';
+            setTimeout(() => {
+                let processedImg = simulateBackgroundRemoval(img);
+                let container = createImageContainer(processedImg, 'Processed');
+                let saveButton = document.createElement('a');
+                saveButton.textContent = 'Save Processed Image';
+                saveButton.className = 'button';
+                saveButton.href = processedImg.src;
+                saveButton.download = 'processed_image.png';
+                container.appendChild(saveButton);
+                document.getElementById('gallery').appendChild(container);
+                document.getElementById('loading').style.display = 'none';
+            }, 2000);
+        }
+
+        function simulateBackgroundRemoval(img) {
+            let canvas = document.createElement('canvas');
+            let ctx = canvas.getContext('2d');
+            canvas.width = img.width;
+            canvas.height = img.height;
+            ctx.drawImage(img, 0, 0);
+            let imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+            let data = imageData.data;
+
+            let color = hexToRgb(bgColor.value);
+            let tol = parseInt(tolerance.value);
+
+            for (let i = 0; i < data.length; i += 4) {
+                let r = data[i];
+                let g = data[i + 1];
+                let b = data[i + 2];
+
+                if (isColorSimilar(r, g, b, color.r, color.g, color.b, tol)) {
+                    data[i + 3] = 0; // Set alpha to 0 (transparent)
+                }
+            }
+
+            ctx.putImageData(imageData, 0, 0);
+            let newImg = document.createElement('img');
+            newImg.src = canvas.toDataURL('image/png');
+            return newImg;
+        }
+
+        function isColorSimilar(r1, g1, b1, r2, g2, b2, tolerance) {
+            return Math.abs(r1 - r2) <= tolerance &&
+                   Math.abs(g1 - g2) <= tolerance &&
+                   Math.abs(b1 - b2) <= tolerance;
+        }
+
+        function hexToRgb(hex) {
+            let result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+            return result ? {
+                r: parseInt(result[1], 16),
+                g: parseInt(result[2], 16),
+                b: parseInt(result[3], 16)
+            } : null;
+        }
+
+        function createImageContainer(img, label) {
+            let container = document.createElement('div');
+            container.className = 'image-container';
+            let labelElement = document.createElement('p');
+            labelElement.textContent = label;
+            container.appendChild(img);
+            container.appendChild(labelElement);
+            return container;
+        }
+
+        bgColor.addEventListener('change', () => {
+            let img = document.querySelector('#gallery img');
+            if (img) processImage(img);
+        });
+
+        tolerance.addEventListener('input', () => {
+            let img = document.querySelector('#gallery img');
+            if (img) processImage(img);
+        });
+    </script>
+</body>
+</html>
